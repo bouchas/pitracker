@@ -1,0 +1,11 @@
+version: '3'
+services:
+  pitracker:
+    image: bouchas/pitracker:latest
+    restart: always
+    environment:
+      - MOBILE_NUMBER=<mobile_number>
+      - MODEM_PORT=/dev/ttyS0
+    privileged: true
+    devices:
+     - "/dev/ttyS0:/dev/ttyS0"
