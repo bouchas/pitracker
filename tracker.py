@@ -80,8 +80,8 @@ while True:
 			Started = False
 			print "Text was Stop. Stop sending Position."
 			print
-		elif test[0:6] == 'Status':
-			Message = 'Status: ' + UTC + ', Started: ' + Started + ', LoopDelay: ' + LoopDelay 
+		elif text[0:6] == 'Status':
+			Message = 'Status: ' + UTC + ', Started: ' + str(Started) + ', LoopDelay: ' + str(LoopDelay) 
 			print "Sending to mobile " + MobileNumber + ": " + Message
 			gsm.send_sms(MobileNumber, Message)
 
