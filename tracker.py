@@ -65,6 +65,7 @@ print reply
 
 # If the send notification is active. You can start the notification by sending 'Start'
 Started = False
+SendStatus = True
 
 print "Waiting for incoming messages..."
 
@@ -82,23 +83,25 @@ while True:
 			print
 		elif text[0:4] == 'Stop':
 			Started = False
-			print "Text was Stop. Stop sending Position."
+			print "Stop sending Position."
 			print
 		elif text[0:6] == 'Status':
-			Message = 'Status: ' + UTC + ', Started: ' + str(Started) + ', LoopDelay: ' + str(LoopDelay) 
-			print "Sending to mobile " + MobileNumber + ": " + Message
-			modem.send_sms(MobileNumber, Message)
+			SendStatus = True
+			print "Sending current status."
+			print
 
 	# Get position
 	reply = modem.command('AT+CGNSINF')
+	# reply example: ['+CGNSINF: 1,1,20211218220507.000,45.398859,-73.482280,21.155,0.00,1.5,1,,0.9,1.3,1.0,,9,10,9,,35,,', 'OK']
+
 	list = reply[0].split(",")
 	if len(list[2]) > 14:
-		UTC = list[2][8:10]+':'+list[2][10:12]+':'+list[2][12:14]
+		UTC = list[2][0:4]+'-'+list[2][4:6]+'-'+list[2][6:8]+' '+list[2][8:10]+':'+list[2][10:12]+':'+list[2][12:14]
 		Latitude = list[3]
 		Longitude = list[4]
 		Altitude = list[5]
 		print 'Position: ' + UTC + ', ' + Latitude + ', ' + Longitude + ', ' + Altitude
-		Seconds = int(UTC[0:2]) * 3600 + int(UTC[3:5]) * 60 + int(UTC[6:8])
+		Seconds = int(UTC[11:13]) * 3600 + int(UTC[14:16]) * 60 + int(UTC[17:19])
 		
 		if Altitude <> '':
 			Latitude = float(Latitude)
@@ -114,28 +117,36 @@ while True:
 				Send = False
 				if Seconds > (PreviousSeconds + SendTimeout * 60):
 					Send = True
-					print("Timeout")
+					MsgTitle = "Timeout"
+					print MsgTitle
 					
 				Distance = abs(CalculateDistance(Latitude, Longitude, PreviousLatitude, PreviousLongitude))
 				if Distance >= HorizontalDelta:
 					Send = True
-					print "HorizontalDelta: " + str(Distance)
+					MsgTitle = "HorizontalDelta: " + str(Distance)
+					print MsgTitle
 				
 				if abs(Altitude - PreviousAltitude) >= VerticalDelta:
 					Send = True
-					print "VerticalDelta: " + str(abs(Altitude - PreviousAltitude))
+					MsgTitle = "VerticalDelta: " + str(abs(Altitude - PreviousAltitude))
+					print MsgTitle
+				
+				if SendStatus:
+					Send = True
+					MsgTitle = "Status"
 						
 				if Send:
 					PreviousSeconds = Seconds
 					PreviousAltitude = Altitude
 					PreviousLatitude = Latitude
 					PreviousLongitude = Longitude
-			
-					if Started:
+
+					if Started or SendStatus:
 						# Text to my mobile
-						Message = 'Position: ' + UTC + ', ' + str(Latitude) + ', ' + str(Longitude) + ', ' + str(int(Altitude)) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
+						Message = MsgTitle + ',  ' + UTC + ', ' + str(Latitude) + ', ' + str(Longitude) + ', ' + str(int(Altitude)) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
 						print "Sending to mobile " + MobileNumber + ": " + Message
 						modem.send_sms(MobileNumber, Message)
+						SendStatus = False
 					else:
 						print "Sending position not activated."
 					
