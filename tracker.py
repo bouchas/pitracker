@@ -3,13 +3,6 @@ import math
 import os
 from pygsm import GsmModem
 
-# Switch GPS on
-def SwitchGPSon():
-    print "Switching GPS on ..."
-    reply = gsm.command('AT+CGNSPWR=1')
-    print reply
-    print
-
 # Calculate the Distance between two coordinates
 def CalculateDistance(Latitude1, Longitude1, Latitude2, Longitude2):
 	Latitude1 = Latitude1 * math.pi / 180
@@ -25,29 +18,36 @@ HorizontalDelta = 50	# Send position if it moves horizontally by at keast this m
 VerticalDelta = 50		# Send position if it moves vertically by at least this many metres
 MaxGSMAltitude = 2000	# Don't try to send above this altitude
 LoopDelay = 10			# Delay between getting gps position
+SMSLoop = 2             # Check SMS message every x seconds 
 
 PreviousSeconds = 0
 PreviousAltitude = 0
 PreviousLatitude = 0
 PreviousLongitude = 0
 
-# Set mobile number here
 MobileNumber = os.environ.get('MOBILE_NUMBER')
+ModemPort = os.environ.get('MODEM_PORT')
+
+# Check if the modem is ready, if not we assume the modem need to be power on
+if (os.system("timeout 10s python gsmready.py") != 0):
+	print "Can't find modem, trying to powering up"
+	os.system("bash power_switch.sh")
+
+# Set mobile number here
 print "Texts will be sent to mobile phone " + MobileNumber
 
 print "Booting modem ..."
-ModemPort = os.environ.get('MODEM_PORT')
-gsm = GsmModem(port=ModemPort)
-gsm.boot()
+modem = GsmModem(port=ModemPort)
+modem.boot()
 
 print "Modem details:"
-reply = gsm.hardware()
+reply = modem.hardware()
 print "Manufacturer = " + reply['manufacturer']
 print "Model = " + reply['model']
 print
 
 # Try and get phone number
-reply = gsm.command('AT+CNUM')
+reply = modem.command('AT+CNUM')
 if len(reply) > 1:
 	list = reply[0].split(",")
 	phone = list[1].strip('\"')
@@ -55,18 +55,22 @@ if len(reply) > 1:
 	print
 	
 print "Deleting old messages ..."
-gsm.query("AT+CMGD=70,4")
+modem.query("AT+CMGD=70,4")
 print
 
-SwitchGPSon()
+# Switch GPS on
+print "Switching GPS on ..."
+reply = modem.command('AT+CGNSPWR=1')
+print reply
 
 # If the send notification is active. You can start the notification by sending 'Start'
 Started = False
 
-while True:
+print "Waiting for incoming messages..."
 
-    # Check messages
-	message = gsm.next_message()
+while True:
+    # check for new messages
+	message = modem.next_message()
 
 	if message:
 		print message
@@ -83,10 +87,10 @@ while True:
 		elif text[0:6] == 'Status':
 			Message = 'Status: ' + UTC + ', Started: ' + str(Started) + ', LoopDelay: ' + str(LoopDelay) 
 			print "Sending to mobile " + MobileNumber + ": " + Message
-			gsm.send_sms(MobileNumber, Message)
+			modem.send_sms(MobileNumber, Message)
 
 	# Get position
-	reply = gsm.command('AT+CGNSINF')
+	reply = modem.command('AT+CGNSINF')
 	list = reply[0].split(",")
 	if len(list[2]) > 14:
 		UTC = list[2][8:10]+':'+list[2][10:12]+':'+list[2][12:14]
@@ -131,8 +135,8 @@ while True:
 						# Text to my mobile
 						Message = 'Position: ' + UTC + ', ' + str(Latitude) + ', ' + str(Longitude) + ', ' + str(int(Altitude)) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
 						print "Sending to mobile " + MobileNumber + ": " + Message
-						gsm.send_sms(MobileNumber, Message)
+						modem.send_sms(MobileNumber, Message)
 					else:
 						print "Sending position not activated."
 					
-	time.sleep(LoopDelay)
+	time.sleep(SMSLoop)

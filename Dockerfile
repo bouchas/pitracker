@@ -18,8 +18,8 @@ ENV PITRACKER_HOME=/pitracker
 
 RUN mkdir -p $PITRACKER_HOME
 
-WORKDIR $PITRACKER_HOME 
+WORKDIR $PITRACKER_HOME
 
-COPY startup.sh tracker.py $PITRACKER_HOME/
+COPY tracker.py gsmready.py power_switch.sh $PITRACKER_HOME/
 
 CMD ["python", "-u", "/pitracker/tracker.py"]
