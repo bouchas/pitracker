@@ -2,6 +2,9 @@ import time
 import math
 import os
 from pygsm import GsmModem
+from datetime import datetime
+from datetime import timedelta
+from dateutil import tz
 
 # Calculate the Distance between two coordinates
 def CalculateDistance(Latitude1, Longitude1, Latitude2, Longitude2):
@@ -13,14 +16,17 @@ def CalculateDistance(Latitude1, Longitude1, Latitude2, Longitude2):
 	return 6371000 * math.acos(math.sin(Latitude2) * math.sin(Latitude1) + math.cos(Latitude2) * math.cos(Latitude1) * math.cos(Longitude2-Longitude1))
 
 # Configuration
-SendTimeout = 5	    	# Send position every x minutes regardless of movement
+SendTimeout = 10    	# Send position every x minutes regardless of movement
 HorizontalDelta = 50	# Send position if it moves horizontally by at keast this many metres
 VerticalDelta = 50		# Send position if it moves vertically by at least this many metres
 MaxGSMAltitude = 2000	# Don't try to send above this altitude
-LoopDelay = 10			# Delay between getting gps position
-SMSLoop = 2             # Check SMS message every x seconds 
+SMSLoop = 5             # Check SMS message every x seconds 
 
-PreviousSeconds = 0
+utc_zone = tz.gettz('UTC')
+to_zone = tz.gettz('America/New_York')
+
+PreviousDateTime = datetime(1970, 1, 1, 0, 0, 0, 0, utc_zone)
+# print 'previous: ' + str(PreviousDateTime)
 PreviousAltitude = 0
 PreviousLatitude = 0
 PreviousLongitude = 0
@@ -63,9 +69,9 @@ print "Switching GPS on ..."
 reply = modem.command('AT+CGNSPWR=1')
 print reply
 
-# If the send notification is active. You can start the notification by sending 'Start'
-Started = False
-SendStatus = True
+onTimeout = False
+onMove = True
+sendStatus = True
 
 print "Waiting for incoming messages..."
 
@@ -76,19 +82,40 @@ while True:
 	if message:
 		print message
 		text = message.text
-		if text[0:5] == 'Start':
-			Started = True
-			PreviousSeconds = 0
-			print "Start sending Position ..."
-			print
-		elif text[0:4] == 'Stop':
-			Started = False
-			print "Stop sending Position."
-			print
+		if text[0:7] == 'Timeout':
+			sendStatus = True
+			if onTimeout:
+				onTimeout = False
+				print str(utc) + ', ' + 'Stop sending Position on Timeout'
+			else:
+				onTimeout = True
+				PreviousDateTime = datetime(1970, 1, 1, 0, 0, 0, 0, utc_zone)
+				print str(utc) + ', ' + 'Start sending Position on Timeout'
+		elif text[0:8] == 'Position':
+			sendStatus = True
+			if onMove:
+				onMove = False
+				print str(utc) + ', ' + 'Stop sending Position on Movement'
+			else:
+				onMove = True
+				PreviousAltitude = 0
+				PreviousLatitude = 0
+				PreviousLongitude = 0
+				print str(utc) + ', ' + 'Start sending Position on Movement'
 		elif text[0:6] == 'Status':
-			SendStatus = True
-			print "Sending current status."
+			sendStatus = True
+			print str(utc) + ', ' + 'Sending current status.'
 			print
+		elif text[0:5] == 'delta':
+			sendStatus = True
+			print 'text: ' + text
+			newdelta = int(text[5:7])
+			print 'newdelta: ' + str(newdelta)
+			SendTimeout = newdelta
+		# elif text[0:7] == 'SMSLoop':
+		# 	newSmsLoop = int(text[7:9])
+		# 	print 'newSmsLoop: ' + str(newSmsLoop)
+		# 	SMSLoop = newSmsLoop			
 
 	# Get position
 	reply = modem.command('AT+CGNSINF')
@@ -96,26 +123,28 @@ while True:
 
 	list = reply[0].split(",")
 	if len(list[2]) > 14:
-		UTC = list[2][0:4]+'-'+list[2][4:6]+'-'+list[2][6:8]+' '+list[2][8:10]+':'+list[2][10:12]+':'+list[2][12:14]
+		utc = datetime(int(list[2][0:4]), int(list[2][4:6]), int(list[2][6:8]), int(list[2][8:10]), int(list[2][10:12]), int(list[2][12:14]), 0, utc_zone)
 		Latitude = list[3]
 		Longitude = list[4]
 		Altitude = list[5]
-		print 'Position: ' + UTC + ', ' + Latitude + ', ' + Longitude + ', ' + Altitude
-		Seconds = int(UTC[11:13]) * 3600 + int(UTC[14:16]) * 60 + int(UTC[17:19])
+		# print str(utc) + ', ' + Latitude + ', ' + Longitude + ', ' + Altitude
 		
 		if Altitude <> '':
 			Latitude = float(Latitude)
 			Longitude = float(Longitude)
 			Altitude = float(Altitude)
-			
-			if Seconds < PreviousSeconds:
-				PreviousSeconds = PreviousSeconds - 86400
-			
+						
 			# Send now ?
 			if Altitude <= MaxGSMAltitude:
 				# Low enough
 				Send = False
-				if Seconds > (PreviousSeconds + SendTimeout * 60):
+				# print 'current:  ' + str(utc)
+				# print 'previous: ' + str(PreviousDateTime)
+				# print 'delta:    ' + str(timedelta(seconds=SendTimeout*60))
+				# print 'next:     ' + str(PreviousDateTime + timedelta(seconds=SendTimeout*60))
+				# print
+
+				if utc > (PreviousDateTime + timedelta(seconds=SendTimeout*60)): 
 					Send = True
 					MsgTitle = "Timeout"
 					print MsgTitle
@@ -131,23 +160,29 @@ while True:
 					MsgTitle = "VerticalDelta: " + str(abs(Altitude - PreviousAltitude))
 					print MsgTitle
 				
-				if SendStatus:
+				if sendStatus:
 					Send = True
-					MsgTitle = "Status"
 						
 				if Send:
-					PreviousSeconds = Seconds
+					PreviousDateTime = utc
 					PreviousAltitude = Altitude
 					PreviousLatitude = Latitude
 					PreviousLongitude = Longitude
 
-					if Started or SendStatus:
-						# Text to my mobile
-						Message = MsgTitle + ',  ' + UTC + ', ' + str(Latitude) + ', ' + str(Longitude) + ', ' + str(int(Altitude)) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
-						print "Sending to mobile " + MobileNumber + ": " + Message
+					# Convert time zone
+					local = utc.astimezone(to_zone)
+
+					if sendStatus:
+						Message = str(local) + ', ' + 'onTimeout(' + str(onTimeout) + ',' + str(SendTimeout) + '), onMove(' + str(onMove) + ',' + str(HorizontalDelta) + ',' + str(VerticalDelta) + ')'
+						print str(utc) + ', ' + 'Sending to mobile ' + MobileNumber + ": " + Message
 						modem.send_sms(MobileNumber, Message)
-						SendStatus = False
+						sendStatus = False
+
+					if onTimeout or onMove:
+						Message = MsgTitle + ', ' + str(local) + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
+						print str(utc) + ', ' + 'Sending to mobile ' + MobileNumber + ": " + Message
+						modem.send_sms(MobileNumber, Message)
 					else:
-						print "Sending position not activated."
+						print str(utc) + ', ' + 'Sending position not activated.'
 					
 	time.sleep(SMSLoop)

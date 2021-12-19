@@ -12,7 +12,7 @@ RUN git clone https://github.com/adammck/pygsm.git /pygsm && \
     cd /pygsm && \
     python setup.py install
 
-RUN pip install crcmod
+RUN pip install crcmod python-dateutil
 
 ENV PITRACKER_HOME=/pitracker
 
