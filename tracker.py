@@ -83,29 +83,26 @@ while True:
 		print message
 		text = message.text
 		if text[0:7] == 'Timeout':
-			sendStatus = True
 			if onTimeout:
 				onTimeout = False
-				print str(utc) + ', ' + 'Stop sending Position on Timeout'
+				print 'Stop sending Position on Timeout'
 			else:
 				onTimeout = True
 				PreviousDateTime = datetime(1970, 1, 1, 0, 0, 0, 0, utc_zone)
-				print str(utc) + ', ' + 'Start sending Position on Timeout'
-		elif text[0:8] == 'Position':
-			sendStatus = True
+				print 'Start sending Position on Timeout'
+		elif text[0:4] == 'Move':
 			if onMove:
 				onMove = False
-				print str(utc) + ', ' + 'Stop sending Position on Movement'
+				print 'Stop sending Position on Movement'
 			else:
 				onMove = True
 				PreviousAltitude = 0
 				PreviousLatitude = 0
 				PreviousLongitude = 0
-				print str(utc) + ', ' + 'Start sending Position on Movement'
+				print 'Start sending Position on Movement'
 		elif text[0:6] == 'Status':
 			sendStatus = True
-			print str(utc) + ', ' + 'Sending current status.'
-			print
+			print 'Sending current status.'
 		elif text[0:5] == 'delta':
 			sendStatus = True
 			print 'text: ' + text
@@ -124,6 +121,9 @@ while True:
 	list = reply[0].split(",")
 	if len(list[2]) > 14:
 		utc = datetime(int(list[2][0:4]), int(list[2][4:6]), int(list[2][6:8]), int(list[2][8:10]), int(list[2][10:12]), int(list[2][12:14]), 0, utc_zone)
+		# Convert to local time zone
+		local = utc.astimezone(to_zone)
+
 		Latitude = list[3]
 		Longitude = list[4]
 		Altitude = list[5]
@@ -137,52 +137,49 @@ while True:
 			# Send now ?
 			if Altitude <= MaxGSMAltitude:
 				# Low enough
-				Send = False
+
 				# print 'current:  ' + str(utc)
 				# print 'previous: ' + str(PreviousDateTime)
 				# print 'delta:    ' + str(timedelta(seconds=SendTimeout*60))
 				# print 'next:     ' + str(PreviousDateTime + timedelta(seconds=SendTimeout*60))
 				# print
 
-				if utc > (PreviousDateTime + timedelta(seconds=SendTimeout*60)): 
-					Send = True
-					MsgTitle = "Timeout"
-					print MsgTitle
-					
-				Distance = abs(CalculateDistance(Latitude, Longitude, PreviousLatitude, PreviousLongitude))
-				if Distance >= HorizontalDelta:
-					Send = True
-					MsgTitle = "HorizontalDelta: " + str(Distance)
-					print MsgTitle
-				
-				if abs(Altitude - PreviousAltitude) >= VerticalDelta:
-					Send = True
-					MsgTitle = "VerticalDelta: " + str(abs(Altitude - PreviousAltitude))
-					print MsgTitle
-				
 				if sendStatus:
-					Send = True
-						
-				if Send:
+					Title = 'Status'
+					Message = str(local) + ', onTimeout(' + str(onTimeout) + ',' + str(SendTimeout) + '), onMove(' + str(onMove) + ',' + str(HorizontalDelta) + ',' + str(VerticalDelta) + ')'
+					print 'Sending to mobile ' + MobileNumber + ": " + Message
+					modem.send_sms(MobileNumber, Message)
+					sendStatus = False
+
+				if onTimeout and utc > (PreviousDateTime + timedelta(seconds=SendTimeout*60)): 
 					PreviousDateTime = utc
 					PreviousAltitude = Altitude
 					PreviousLatitude = Latitude
 					PreviousLongitude = Longitude
-
-					# Convert time zone
-					local = utc.astimezone(to_zone)
-
-					if sendStatus:
-						Message = str(local) + ', ' + 'onTimeout(' + str(onTimeout) + ',' + str(SendTimeout) + '), onMove(' + str(onMove) + ',' + str(HorizontalDelta) + ',' + str(VerticalDelta) + ')'
-						print str(utc) + ', ' + 'Sending to mobile ' + MobileNumber + ": " + Message
-						modem.send_sms(MobileNumber, Message)
-						sendStatus = False
-
-					if onTimeout or onMove:
-						Message = MsgTitle + ', ' + str(local) + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
-						print str(utc) + ', ' + 'Sending to mobile ' + MobileNumber + ": " + Message
-						modem.send_sms(MobileNumber, Message)
-					else:
-						print str(utc) + ', ' + 'Sending position not activated.'
+					Title = 'Timeout reached, onTimeout(' + str(onTimeout) + ',' + str(SendTimeout) + ')'
+					Message = str(local) + ', ' + Title + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
+					print 'Sending to mobile ' + MobileNumber + ": " + Message
+					modem.send_sms(MobileNumber, Message)
 					
+				Distance = abs(CalculateDistance(Latitude, Longitude, PreviousLatitude, PreviousLongitude))
+				if onMove and Distance >= HorizontalDelta:
+					PreviousDateTime = utc
+					PreviousAltitude = Altitude
+					PreviousLatitude = Latitude
+					PreviousLongitude = Longitude
+					Title = "HorizontalDelta: " + str(Distance) + ', onMove(' + str(onMove) + ',' + str(HorizontalDelta) + ',' + str(VerticalDelta) + ')'
+					Message = str(local) + ', ' + Title + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
+					print 'Sending to mobile ' + MobileNumber + ": " + Message
+					modem.send_sms(MobileNumber, Message)
+				
+				if onMove and abs(Altitude - PreviousAltitude) >= VerticalDelta:
+					PreviousDateTime = utc
+					PreviousAltitude = Altitude
+					PreviousLatitude = Latitude
+					PreviousLongitude = Longitude
+					Title = "VerticalDelta: " + str(abs(Altitude - PreviousAltitude)) + ', onMove(' + str(onMove) + ',' + str(HorizontalDelta) + ',' + str(VerticalDelta) + ')'
+					Message = str(local) + ', ' + Title + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
+					print 'Sending to mobile ' + MobileNumber + ": " + Message
+					modem.send_sms(MobileNumber, Message)
+				
 	time.sleep(SMSLoop)
