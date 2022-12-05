@@ -6,18 +6,26 @@ from datetime import datetime
 from datetime import timedelta
 from dateutil import tz
 
-# Calculate the Distance between two coordinates
-def CalculateDistance(Latitude1, Longitude1, Latitude2, Longitude2):
-	Latitude1 = Latitude1 * math.pi / 180
-	Longitude1 = Longitude1 * math.pi / 180
-	Latitude2 = Latitude2 * math.pi / 180
-	Longitude2 = Longitude2 * math.pi / 180
+def degreesToRadians(degrees):
+    return degrees * math.pi / 180
 
-	return 6371000 * math.acos(math.sin(Latitude2) * math.sin(Latitude1) + math.cos(Latitude2) * math.cos(Latitude1) * math.cos(Longitude2-Longitude1))
+# Calculate the Distance between two coordinates
+# https://stackoverflow.com/questions/365826/calculate-distance-between-2-gps-coordinates
+def distanceInMeterBetweenEarthCoordinates(lat1, lon1, lat2, lon2):
+    earthRadiusMeter = 6371000;
+    dLat = degreesToRadians(lat2-lat1);
+    dLon = degreesToRadians(lon2-lon1);
+
+    lat1 = degreesToRadians(lat1)
+    lat2 = degreesToRadians(lat2)
+    
+    a = math.sin(dLat/2) * math.sin(dLat/2) + math.sin(dLon/2) * math.sin(dLon/2) * math.cos(lat1) * math.cos(lat2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return earthRadiusMeter * c
 
 # Configuration
 SendTimeout = 10    	# Send position every x minutes regardless of movement
-HorizontalDelta = 50	# Send position if it moves horizontally by at keast this many metres
+HorizontalDelta = 10	# Send position if it moves horizontally by at keast this many metres
 VerticalDelta = 50		# Send position if it moves vertically by at least this many metres
 MaxGSMAltitude = 2000	# Don't try to send above this altitude
 SMSLoop = 5             # Check SMS message every x seconds 
@@ -73,6 +81,9 @@ onTimeout = False
 onMove = True
 sendStatus = True
 
+Message = 'Tracker App started!'
+modem.send_sms(MobileNumber, Message)
+
 print "Waiting for incoming messages..."
 
 while True:
@@ -85,6 +96,7 @@ while True:
 		if text[0:7] == 'Timeout':
 			if onTimeout:
 				onTimeout = False
+				sendStatus = True
 				print 'Stop sending Position on Timeout'
 			else:
 				onTimeout = True
@@ -93,6 +105,7 @@ while True:
 		elif text[0:4] == 'Move':
 			if onMove:
 				onMove = False
+				sendStatus = True
 				print 'Stop sending Position on Movement'
 			else:
 				onMove = True
@@ -160,9 +173,11 @@ while True:
 					Message = str(local) + ', ' + Title + ', ' + str(Latitude) + ', ' + str(Longitude) + ' http://maps.google.com/?q=' + str(Latitude) + ',' + str(Longitude)
 					print 'Sending to mobile ' + MobileNumber + ": " + Message
 					modem.send_sms(MobileNumber, Message)
-					
-				Distance = abs(CalculateDistance(Latitude, Longitude, PreviousLatitude, PreviousLongitude))
+				
+				Distance = distanceInMeterBetweenEarthCoordinates(Latitude, Longitude, PreviousLatitude, PreviousLongitude)
+
 				if onMove and Distance >= HorizontalDelta:
+					if Distance > 5000: Distance = 0 # we assume if the distance is greather the 5000,  that the unit reboot
 					PreviousDateTime = utc
 					PreviousAltitude = Altitude
 					PreviousLatitude = Latitude
